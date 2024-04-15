@@ -2,6 +2,10 @@
 logs
 *.log
 
+# Temp/generated files
+config.json
+results
+
 # Runtime data
 pids
 *.pid

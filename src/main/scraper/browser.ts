@@ -16,6 +16,7 @@ export const startBrowser = async (
     headless,
     args: [
       '--no-sandbox',
+      `--window-size=${1366},${768}`
       // '--disable-setuid-sandbox',
       // '--disable-infobars',
       // '--window-position=0,0',

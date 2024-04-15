@@ -10,6 +10,8 @@ const delay = (timeout: number) =>
 
 export const getLiAt = async (page: Page): Promise<string | undefined> => {
   await page.goto('https://linkedin.com');
+  await page.waitForSelector('button[data-control-name="ga-cookie.consent.deny.v4"]');
+  await page.click('button[data-control-name="ga-cookie.consent.deny.v4"]')
   await page.waitForSelector('.feed-identity-module__actor-meta', {
     timeout: 0,
   });

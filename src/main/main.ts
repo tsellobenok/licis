@@ -84,8 +84,10 @@ ipcMain.handle('set-li-at', async (event, { liAt }: { liAt: string }) => {
 ipcMain.handle('connect-linkedin', async () => {
   const { browser, page } = await startBrowser(false);
 
+  let liAt = '';
+
   try {
-    const liAt = await getLiAt(page);
+    liAt = await getLiAt(page);
 
     if (liAt) {
       fs.writeFileSync(
@@ -96,6 +98,7 @@ ipcMain.handle('connect-linkedin', async () => {
         'utf-8',
       );
     }
+
   } catch (err) {
     new Notification({
       title: `Failed to connect`,
@@ -104,6 +107,8 @@ ipcMain.handle('connect-linkedin', async () => {
   }
 
   browser?.close();
+
+  return liAt;
 });
 
 ipcMain.handle('download', async (event, args) => {

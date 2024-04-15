@@ -9,15 +9,14 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core';
-import { FileWithPath } from '@mantine/dropzone';
-import { useForm } from '@mantine/form';
 import { IconPlugConnected, IconX } from '@tabler/icons-react';
+import { useForm } from 'react-hook-form';
 
 import { parseCSV } from '../../utils/csv';
 import { Form } from './Landing.styles';
 
 interface FormValues {
-  file: FileWithPath | null;
+  file: File | null;
   liAt: string;
   timeout: number;
 }
@@ -33,26 +32,20 @@ interface Task {
 export const Landing = () => {
   const [task, setTask] = useState<Task | null>(null);
   const [companyUrls, setCompanyUrls] = useState<string[] | null>(null);
-  const form = useForm<FormValues>({
-    mode: 'controlled',
-    initialValues: {
+  const { watch, handleSubmit, setValue } = useForm<FormValues>({
+    defaultValues: {
       file: null,
       liAt: '',
       timeout: 3,
     },
-
-    validate: {
-      liAt: (value) =>
-        value ? null : 'li_at cookie is required for authentication',
-    },
   });
-  const values = form.getValues();
+  const values = watch();
 
   const getLiAtFromStorage = async () => {
     try {
       const liAt = await window.electron.ipcRenderer.invoke('get-li-at');
 
-      form.setFieldValue('liAt', liAt);
+      setValue('liAt', liAt);
     } catch (err) {
       console.error(err);
     }
@@ -68,7 +61,7 @@ export const Landing = () => {
     }
   };
 
-  const parseFile = async (file: FileWithPath) => {
+  const parseFile = async (file: File) => {
     setCompanyUrls(await parseCSV(file as File));
   };
 
@@ -82,9 +75,9 @@ export const Landing = () => {
     });
 
     await window.electron.ipcRenderer.invoke('extract-company-info', {
-      urls: companyUrls,
       liAt,
       timeout,
+      urls: companyUrls,
     });
   };
 
@@ -97,17 +90,17 @@ export const Landing = () => {
   const onLiConnect = async () => {
     const liAt = await window.electron.ipcRenderer.invoke('connect-linkedin');
 
-    form.setFieldValue('liAt', liAt);
+    setValue('liAt', liAt);
   };
 
-  form.watch('liAt', ({ value }) => {
-    if (value) {
-      setLiAtToStorage(value);
+  useEffect(() => {
+    if (values.liAt) {
+      setLiAtToStorage(values.liAt);
     }
-  });
+  }, [values.liAt]);
 
-  form.watch('file', ({ value }) => {
-    if (!value) {
+  useEffect(() => {
+    if (!values.file) {
       setCompanyUrls(null);
       setTask(null);
 
@@ -116,8 +109,10 @@ export const Landing = () => {
 
     if (companyUrls) return;
 
-    parseFile(value);
-  });
+    console.log('parse', values.file);
+
+    parseFile(values.file);
+  }, [values.file]);
 
   useEffect(() => {
     const unsubscribe = window.electron.ipcRenderer.on(
@@ -137,23 +132,44 @@ export const Landing = () => {
   return (
     <Flex direction="column" gap="sm">
       {!task && (
-        <Form onSubmit={form.onSubmit(onSubmit)}>
-          <FileInput
-            accept="text/csv"
-            placeholder="urls.csv"
-            label="Select CSV file"
-            description="File should contain one column with Linkedin company urls"
-            {...form.getInputProps('file')}
-          />
+        <Form onSubmit={handleSubmit(onSubmit)}>
+          <Flex direction="column" gap="xs">
+            <FileInput
+              accept="text/csv"
+              description="File should contain one column with Linkedin company urls"
+              label="Select CSV file"
+              onChange={(file) => setValue('file', file)}
+              placeholder="urls.csv"
+              rightSection={
+                values.file ? (
+                  <ActionIcon
+                    color="red"
+                    onClick={() => setValue('file', null)}
+                    size="xs"
+                    variant="subtle"
+                  >
+                    <IconX />
+                  </ActionIcon>
+                ) : null
+              }
+              value={values.file}
+            />
+            {!!values.file && (
+              <Text c="gray" size="sm">
+                {companyUrls?.length || 0} company urls found
+              </Text>
+            )}
+          </Flex>
 
           {!!values.file && (
             <>
               <Flex gap="sm" align="flex-end">
                 <TextInput
-                  {...form.getInputProps('liAt')}
                   description="Get it from cookies of linkedin"
                   label="LiAt"
+                  onChange={(e) => setValue('liAt', e.target.value)}
                   placeholder="li_at"
+                  value={values.liAt}
                   rightSection={
                     <Tooltip label="Connect LinkedIn">
                       <ActionIcon
@@ -168,32 +184,12 @@ export const Landing = () => {
                 />
               </Flex>
               <NumberInput
-                defaultValue={3}
-                label="Delay"
                 description="Delay between pages in seconds (3 is recommended)"
+                label="Delay"
                 min={1}
-                {...form.getInputProps('timeout')}
+                onChange={(value) => setValue('timeout', value)}
+                value={values.timeout}
               />
-              <Flex direction="column" gap="sm">
-                <div>
-                  <Flex align="center" gap="xs">
-                    <div>
-                      <strong>{values.file?.name}</strong> selected
-                    </div>
-                    <ActionIcon
-                      onClick={() => form.setFieldValue('file', null)}
-                      variant="subtle"
-                      color="red"
-                      size="xs"
-                    >
-                      <IconX />
-                    </ActionIcon>
-                  </Flex>
-                  <Text c="gray" size="sm">
-                    {companyUrls?.length} company urls found
-                  </Text>
-                </div>
-              </Flex>
             </>
           )}
 
@@ -236,10 +232,7 @@ export const Landing = () => {
 
       <Flex gap="sm">
         {(task?.status === 'completed' || task?.status === 'failed') && (
-          <Button
-            onClick={() => form.setFieldValue('file', null)}
-            variant="outline"
-          >
+          <Button onClick={() => setValue('file', null)} variant="outline">
             Start a new one
           </Button>
         )}

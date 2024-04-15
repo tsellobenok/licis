@@ -45,6 +45,10 @@ export const scrape = async ({ liAt, timeout, urls }: ScrapeProps) => {
     let failCount = 0;
     let current = 0;
 
+    writeableStreamCsv.write(
+      `URL,Name,Website,Size,Industry,Headquarters,Tagline,Scrape status\n`,
+    );
+
     for (const url of urls) {
       if (isCancelled) {
         eventBus.emit('update', {
