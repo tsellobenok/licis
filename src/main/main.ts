@@ -12,11 +12,13 @@ import { autoUpdater } from 'electron-updater';
 import fs from 'fs';
 import log from 'electron-log';
 import MenuBuilder from './menu';
-import { resolveHtmlPath } from './util';
+import { getAppDataPath, resolveHtmlPath, writeFile } from './util';
 import { scrape } from './scraper';
 import { eventBus } from './scraper/utils/event-bus';
 import { startBrowser } from './scraper/browser';
 import { getLiAt } from './scraper/utils/auth';
+
+const configPath = './config.json';
 
 class AppUpdater {
   constructor() {
@@ -49,7 +51,10 @@ ipcMain.handle('extract-company-info', async (event, args) => {
 
 ipcMain.handle('get-li-at', async () => {
   try {
-    const content = fs.readFileSync(path.resolve('./config.json'), 'utf-8');
+    const content = fs.readFileSync(
+      path.resolve(getAppDataPath(), configPath),
+      'utf-8',
+    );
 
     if (!content) {
       return '';
@@ -63,20 +68,21 @@ ipcMain.handle('get-li-at', async () => {
 
 ipcMain.handle('set-li-at', async (event, { liAt }: { liAt: string }) => {
   try {
-    const content = fs.readFileSync(path.resolve('./config.json'), 'utf-8');
-
     let existing = {};
 
     try {
+      const content = fs.readFileSync(
+        path.resolve(getAppDataPath(), configPath),
+        'utf-8',
+      );
+
       existing = JSON.parse(content);
     } catch (err) {}
 
-    return fs.writeFileSync(
-      path.resolve('./config.json'),
-      JSON.stringify({ ...existing, liAt }),
-      'utf-8',
-    );
+    return writeFile('./', configPath, JSON.stringify({ ...existing, liAt }));
   } catch (err) {
+    console.error(err);
+
     return '';
   }
 });
@@ -90,15 +96,14 @@ ipcMain.handle('connect-linkedin', async () => {
     liAt = await getLiAt(page);
 
     if (liAt) {
-      fs.writeFileSync(
-        path.resolve('./config.json'),
+      writeFile(
+        './',
+        configPath,
         JSON.stringify({
           liAt,
         }),
-        'utf-8',
       );
     }
-
   } catch (err) {
     new Notification({
       title: `Failed to connect`,
@@ -113,7 +118,10 @@ ipcMain.handle('connect-linkedin', async () => {
 
 ipcMain.handle('download', async (event, args) => {
   try {
-    const fileContent = fs.readFileSync(path.resolve(args.path), 'utf-8');
+    const fileContent = fs.readFileSync(
+      path.resolve(getAppDataPath(), args.path),
+      'utf-8',
+    );
 
     dialog
       .showSaveDialog(
@@ -125,12 +133,16 @@ ipcMain.handle('download', async (event, args) => {
         fileContent,
       )
       .then(({ filePath }) => {
-        fs.writeFileSync(filePath, fileContent, 'utf-8');
+        fs.writeFileSync(
+          path.resolve(getAppDataPath(), filePath),
+          fileContent,
+          'utf-8',
+        );
       })
       .catch(() => {
         new Notification({
           title: `Failed to download file`,
-          body: 'Check results folder in the app directory',
+          body: 'Please try again. Or contact support if issue persists.',
         }).show();
       });
   } catch (error) {

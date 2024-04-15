@@ -5,6 +5,7 @@ import { pageHandler as getCompanyInfo } from './handlers/company-info';
 
 import { eventBus } from './utils/event-bus';
 import { startBrowserAndLogin } from './browser';
+import { createWriteStream, getAppDataPath } from '../util';
 
 interface ScrapeProps {
   liAt: string;
@@ -33,13 +34,8 @@ export const scrape = async ({ liAt, timeout, urls }: ScrapeProps) => {
       total: urls.length,
     });
 
-    if (!fs.existsSync('./results')) {
-      fs.mkdirSync('./results');
-    }
 
-    const writeableStreamCsv = fs.createWriteStream(
-      path.resolve(`./results/results.csv`),
-    );
+    const writeableStreamCsv = createWriteStream('./results', 'results.csv');
 
     let successCount = 0;
     let failCount = 0;

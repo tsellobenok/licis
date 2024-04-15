@@ -1,5 +1,5 @@
 {
-  "description": "App to scrape linkedin company info",
+  "description": "App to scrape LinkedIn company info",
   "license": "MIT",
   "author": {
     "name": "Dzmitry Tselabionak",
@@ -159,8 +159,8 @@
     "webpack-node-externals": "^3.0.0"
   },
   "build": {
-    "productName": "Linkedin Company Info Scraper",
-    "appId": "org.erb.LiScraper",
+    "productName": "licis",
+    "appId": "org.erb.licis",
     "asar": true,
     "asarUnpack": "**\\*.{node,dll}",
     "files": [
@@ -218,8 +218,8 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "linkedin-scraper",
-      "repo": "linkedin-scraper"
+      "owner": "tsellobenok",
+      "repo": "scraper-desktop"
     }
   },
   "devEngines": {
@@ -229,8 +229,7 @@
   "electronmon": {
     "patterns": [
       "!**/**",
-      "src/main/**",
-      "!src/main/scraper/temp/**"
+      "src/main/**"
     ],
     "logLevel": "quiet"
   }
