@@ -1,41 +1,80 @@
-import fs from 'fs';
-import path from 'path';
+import log from 'electron-log';
 
 import { pageHandler as getCompanyInfo } from './handlers/company-info';
 
-import { eventBus } from './utils/event-bus';
-import { startBrowserAndLogin } from './browser';
-import { createWriteStream, getAppDataPath } from '../util';
+import { eventBus } from '../event-bus';
+import { startBrowser, startBrowserAndLogin } from './browser';
+import { createWriteStream } from '../util';
+import { getLiAt } from './utils/auth';
 
-interface ScrapeProps {
-  liAt: string;
-  timeout: number;
-  urls: string[];
-}
+import { ScrapeProps } from '../../types';
+import { RESULTS_FILENAME, RESULTS_PATH } from '../../const';
+import { getTaskStatus } from './utils/tasks';
 
-export const scrape = async ({ liAt, timeout, urls }: ScrapeProps) => {
-  const { page, stopBrowser } = await startBrowserAndLogin(liAt);
+const SCRAPERS = {
+  'company-info': getCompanyInfo,
+};
 
-  let isCancelled = false;
-  let cancelReason = 'Something went wrong. Please try again.';
+export const connectToLinkedIn = async () => {
+  const { browser, page } = await startBrowser(false);
 
-  const onCancel = (args) => {
-    stopBrowser();
-    cancelReason = args.message;
-    isCancelled = true;
-  };
+  log.info('Start connection to LinkedIn...');
 
-  eventBus.on('cancel', onCancel);
+  let liAt = '';
 
   try {
-    eventBus.emit('update', {
+    liAt = await getLiAt(page);
+
+    log.info('Got li_at:', liAt);
+  } catch (err) {
+    log.error('Failed to get li_at:', err);
+
+    eventBus.emit('notification', {
+      title: `Failed to connect to LinkedIn`,
+      body: 'Try to get li_at cookie manually',
+    });
+  }
+
+  browser?.close();
+
+  return liAt;
+};
+
+export const scrape = async (props: ScrapeProps) => {
+  const { liAt, timeout, urls, type = 'company-info' } = props;
+  const { page, stopBrowser } = await startBrowserAndLogin(liAt);
+
+  const onStopScraping = () => {
+    stopBrowser();
+    log.error('Scrapping forcefully stopped');
+  };
+
+  eventBus.on('stop-scraping', onStopScraping);
+
+  try {
+    let aborted = false;
+    let abortReason = 'Something went wrong';
+
+    page.on('response', (response) => {
+      if (response.status() === 999) {
+        log.error('Got 999 status code. LinkedIn session expired');
+        aborted = true;
+        abortReason = 'LinkedIn session expired. Reconnect it, please';
+      }
+    });
+
+    eventBus.emit('update-task', {
       current: 0,
       status: 'in-progress',
       total: urls.length,
     });
 
+    const writeableStreamCsv = createWriteStream(
+      RESULTS_PATH,
+      RESULTS_FILENAME,
+    );
 
-    const writeableStreamCsv = createWriteStream('./results', 'results.csv');
+    log.info('Created results file');
 
     let successCount = 0;
     let failCount = 0;
@@ -46,71 +85,66 @@ export const scrape = async ({ liAt, timeout, urls }: ScrapeProps) => {
     );
 
     for (const url of urls) {
-      if (isCancelled) {
-        eventBus.emit('update', {
-          status: 'failed',
-          reason: cancelReason,
-        });
-
-        break;
-      }
-
       try {
         current++;
 
-        eventBus.emit('update', {
+        log.info(`Starting scraping ${current} of ${urls.length}: `, url);
+
+        eventBus.emit('update-task', {
           current,
         });
 
-        const result = await getCompanyInfo(url, page, timeout);
+        const result = await SCRAPERS[type](url, page, timeout);
 
-        if (result && result.status !== 'failed') {
-          writeableStreamCsv.write(
-            `${Object.values(result)
-              .map((r) => `"${r}"`)
-              .join(',')}\n`,
-          );
+        writeableStreamCsv.write(
+          `${Object.values(result)
+            .map((r) => `"${r}"`)
+            .join(',')}\n`,
+        );
 
+        if (result && result?.status !== 'failed') {
           successCount++;
-
-          eventBus.emit('update', {
-            successCount,
-          });
+          log.info(`Scraped ${current} of ${urls.length}: `, url);
         } else {
           failCount++;
-
-          eventBus.emit('update', {
-            failCount,
-          });
+          log.info(`Failed to scrape ${current} of ${urls.length}: `, url);
         }
+
+        eventBus.emit('update-task', {
+          successCount,
+          failCount,
+        });
       } catch (err) {
+        log.error(`Error at ${current} of ${urls.length}: `, url);
+        log.error(err);
+
         failCount++;
 
-        eventBus.emit('update', {
+        eventBus.emit('update-task', {
           failCount,
         });
       }
+
+      if (aborted) {
+        throw new Error(abortReason);
+      }
     }
 
-    if (!isCancelled) {
-      eventBus.emit('update', {
-        status: 'completed',
-      });
-    }
+    eventBus.emit('update-task', {
+      status: getTaskStatus({ successCount, total: urls.length }),
+    });
   } catch (err) {
-    console.error(err);
+    const { message } = err as Error;
 
-    eventBus.emit('update', {
+    eventBus.emit('update-task', {
       status: 'failed',
+      failReason: message,
     });
-    eventBus.emit('error', {
-      details: err.message,
-      message: 'Failed to scrape',
-      stack: err.stack,
-    });
+
+    log.error('Error while scraping', message);
   }
 
-  eventBus.off('cancel', onCancel);
+  eventBus.off('stop-scraping', onStopScraping);
 
   stopBrowser();
 };

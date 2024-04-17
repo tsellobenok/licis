@@ -1,22 +1,26 @@
-import { Browser, HTTPResponse, Page } from 'puppeteer';
+import { Browser, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import log from 'electron-log';
+
 import { setAuthCookie } from './utils/auth';
-import { eventBus } from './utils/event-bus';
+import { WINDOW_HEIGHT, WINDOW_WIDTH } from '../../const';
 
 puppeteer.use(StealthPlugin());
 
 export const startBrowser = async (
   headless = true,
 ): Promise<{
-  browser: Browser | undefined;
-  page: Page | undefined;
+  browser: Browser;
+  page: Page;
 }> => {
+  log.info('Starting browser...');
+
   const browser = await puppeteer.launch({
-    headless,
+    headless: headless ? 'new' : false,
     args: [
       '--no-sandbox',
-      `--window-size=${1366},${768}`
+      `--window-size=${WINDOW_WIDTH},${WINDOW_HEIGHT}`,
       // '--disable-setuid-sandbox',
       // '--disable-infobars',
       // '--window-position=0,0',
@@ -29,8 +33,11 @@ export const startBrowser = async (
   const page = await browser?.newPage();
 
   if (!browser || !page) {
+    browser?.close();
     throw new Error('Browser was not initialized');
   }
+
+  log.info('Browser started successfully');
 
   return { browser, page };
 };
@@ -40,18 +47,8 @@ export const startBrowserAndLogin = async (liAt: string) => {
 
   const stopBrowser = () => {
     browser?.close();
+    log.info('Browser stopped');
   };
-
-  const onPageResponse = async (response: HTTPResponse) => {
-    if (
-      response.url().includes('linkedin.com/authwall') ||
-      response.status() === 429
-    ) {
-      eventBus.emit('cancel', { message: 'LinkedIn re-login is required' });
-    }
-  };
-
-  page?.on('response', onPageResponse);
 
   await setAuthCookie(page, liAt);
 

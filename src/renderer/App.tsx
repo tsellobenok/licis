@@ -1,6 +1,6 @@
 import { MemoryRouter as Router, Routes, Route } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
-import { Landing } from './routes/landing';
+import { Home } from './routes/home';
 
 import '@mantine/core/styles.css';
 import './App.css';
@@ -10,7 +10,7 @@ export default function App() {
     <MantineProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={<Home />} />
         </Routes>
       </Router>
     </MantineProvider>

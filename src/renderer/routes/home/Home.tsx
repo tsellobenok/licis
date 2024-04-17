@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import log from 'electron-log/renderer';
 import {
   ActionIcon,
   Button,
@@ -13,26 +14,16 @@ import { IconPlugConnected, IconX } from '@tabler/icons-react';
 import { useForm } from 'react-hook-form';
 
 import { parseCSV } from '../../utils/csv';
-import { Form } from './Landing.styles';
+import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
 
-interface FormValues {
-  file: File | null;
-  liAt: string;
-  timeout: number;
-}
+import { ScrapeFormValues, ScrapeTask } from '../../../types';
 
-interface Task {
-  current: number;
-  failCount: number;
-  status: 'in-progress' | 'completed' | 'failed';
-  successCount: number;
-  total: number;
-}
+import { Form } from './Home.styles';
 
-export const Landing = () => {
-  const [task, setTask] = useState<Task | null>(null);
+export const Home = () => {
+  const [task, setTask] = useState<ScrapeTask | null>(null);
   const [companyUrls, setCompanyUrls] = useState<string[] | null>(null);
-  const { watch, handleSubmit, setValue } = useForm<FormValues>({
+  const { watch, handleSubmit, setValue } = useForm<ScrapeFormValues>({
     defaultValues: {
       file: null,
       liAt: '',
@@ -41,56 +32,85 @@ export const Landing = () => {
   });
   const values = watch();
 
-  const getLiAtFromStorage = async () => {
+  const restoreLiAtFromStorage = async () => {
     try {
-      const liAt = await window.electron.ipcRenderer.invoke('get-li-at');
+      const config = await window.electron.ipcRenderer.invoke('get-config');
 
-      setValue('liAt', liAt);
+      setValue('liAt', config?.liAt);
     } catch (err) {
-      console.error(err);
+      log.error('Failed to get liAt from storage');
+      log.error(err);
     }
   };
 
   const setLiAtToStorage = async (liAt: string) => {
     try {
-      await window.electron.ipcRenderer.invoke('set-li-at', {
+      await window.electron.ipcRenderer.invoke('update-config', {
         liAt,
       });
     } catch (err) {
-      console.error(err);
+      log.error('Failed to set liAt to storage.');
+      log.error(err);
     }
   };
 
   const parseFile = async (file: File) => {
-    setCompanyUrls(await parseCSV(file as File));
+    try {
+      const result = await parseCSV(file as File);
+
+      setCompanyUrls(result);
+
+      log.info('Parsed file. Companies found: ', result?.length);
+    } catch (err) {
+      log.error('Failed to parse file');
+      log.error(err);
+    }
   };
 
-  const onSubmit = async ({ liAt, timeout }: FormValues) => {
-    setTask({
-      current: 0,
-      failCount: 0,
-      status: 'in-progress',
-      successCount: 0,
-      total: companyUrls?.length || 0,
-    });
+  const onSubmit = async ({ liAt, timeout }: ScrapeFormValues) => {
+    try {
+      setTask({
+        current: 0,
+        failCount: 0,
+        status: 'in-progress',
+        successCount: 0,
+        total: companyUrls?.length || 0,
+      });
 
-    await window.electron.ipcRenderer.invoke('extract-company-info', {
-      liAt,
-      timeout,
-      urls: companyUrls,
-    });
+      await window.electron.ipcRenderer.invoke('scrape', {
+        liAt,
+        timeout,
+        type: 'company-info',
+        urls: companyUrls,
+      });
+    } catch (err) {
+      log.error('Scrape task failed');
+      log.error(err);
+    }
   };
 
-  const onDownload = () => {
-    window.electron.ipcRenderer.invoke('download', {
-      path: './results/results.csv',
-    });
+  const onDownload = async () => {
+    try {
+      log.info('Download invoked');
+
+      await window.electron.ipcRenderer.invoke('download', {
+        path: `${RESULTS_PATH}/${RESULTS_FILENAME}`,
+      });
+    } catch (err) {
+      log.error('Download failed');
+      log.error(err);
+    }
   };
 
   const onLiConnect = async () => {
-    const liAt = await window.electron.ipcRenderer.invoke('connect-linkedin');
+    try {
+      const liAt = await window.electron.ipcRenderer.invoke('connect-linkedin');
 
-    setValue('liAt', liAt);
+      setValue('liAt', liAt);
+    } catch (err) {
+      log.error('LinkedIn connection failed');
+      log.error(err);
+    }
   };
 
   useEffect(() => {
@@ -109,20 +129,20 @@ export const Landing = () => {
 
     if (companyUrls) return;
 
-    console.log('parse', values.file);
-
     parseFile(values.file);
   }, [values.file]);
 
   useEffect(() => {
+    restoreLiAtFromStorage();
+  }, []);
+
+  useEffect(() => {
     const unsubscribe = window.electron.ipcRenderer.on(
-      'update',
-      (data: Partial<Task>) => {
-        setTask((current) => ({ ...(current || {}), ...data }));
+      'update-task',
+      (data: Partial<ScrapeTask>) => {
+        setTask((current) => ({ ...(current || {}), ...data }) as ScrapeTask);
       },
     );
-
-    getLiAtFromStorage();
 
     return () => {
       unsubscribe();
@@ -187,7 +207,7 @@ export const Landing = () => {
                 description="Delay between pages in seconds (3 is recommended)"
                 label="Delay"
                 min={1}
-                onChange={(value) => setValue('timeout', value)}
+                onChange={(value) => setValue('timeout', Number(value) || 3)}
                 value={values.timeout}
               />
             </>
@@ -200,49 +220,56 @@ export const Landing = () => {
       )}
 
       {!!task && (
-        <div>
-          <Text size="xl">
-            <strong>Task {task.status}</strong>
-          </Text>
+        <Flex gap="xs" direction="column">
           <div>
-            {task.status === 'in-progress' ? 'Scraping' : 'Scraped'}{' '}
-            <strong>{task.current}</strong> of <strong>{task.total}</strong>{' '}
-            companies
+            <Text size="xl">
+              <strong>Task {task.status}</strong>
+            </Text>
+            {task.failReason && (
+              <Text c="red" size="xs">
+                {task.failReason}
+              </Text>
+            )}
           </div>
-          <Flex gap="xl">
-            <Flex gap="xs" align="center">
-              <Text size="sm" c="green">
-                Succeed:
-              </Text>{' '}
-              <Text size="sm">
-                <strong>{task.successCount}</strong>
-              </Text>
+          <div>
+            <div>
+              {task.status === 'in-progress' ? 'Scraping' : 'Scraped'}{' '}
+              <strong>{task.current}</strong> of <strong>{task.total}</strong>{' '}
+              companies
+            </div>
+            <Flex gap="xl">
+              <Flex gap="xs" align="center">
+                <Text size="sm" c="green">
+                  Succeed:
+                </Text>{' '}
+                <Text size="sm">
+                  <strong>{task.successCount}</strong>
+                </Text>
+              </Flex>
+              <Flex gap="xs" align="center">
+                <Text c="red" size="sm">
+                  Failed:
+                </Text>
+                <Text size="sm">
+                  <strong>{task.failCount}</strong>
+                </Text>
+              </Flex>
             </Flex>
-            <Flex gap="xs" align="center">
-              <Text c="red" size="sm">
-                Failed:
-              </Text>
-              <Text size="sm">
-                <strong>{task.failCount}</strong>
-              </Text>
-            </Flex>
-          </Flex>
-        </div>
+          </div>
+        </Flex>
       )}
 
-      <Flex gap="sm">
-        {(task?.status === 'completed' || task?.status === 'failed') && (
+      {!!task && task?.status !== 'in-progress' && (
+        <Flex gap="sm">
           <Button onClick={() => setValue('file', null)} variant="outline">
             Start a new one
           </Button>
-        )}
 
-        {task?.status === 'completed' && (
           <div>
             <Button onClick={onDownload}>Download results</Button>
           </div>
-        )}
-      </Flex>
+        </Flex>
+      )}
     </Flex>
   );
 };
