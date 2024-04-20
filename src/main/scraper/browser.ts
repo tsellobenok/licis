@@ -17,7 +17,8 @@ export const startBrowser = async (
   log.info('Starting browser...');
 
   const browser = await puppeteer.launch({
-    headless: headless ? 'new' : false,
+    headless: false,
+    // headless: headless ? 'new' : false, TODO
     args: [
       '--no-sandbox',
       `--window-size=${WINDOW_WIDTH},${WINDOW_HEIGHT}`,

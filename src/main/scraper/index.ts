@@ -81,7 +81,7 @@ export const scrape = async (props: ScrapeProps) => {
     let current = 0;
 
     writeableStreamCsv.write(
-      `URL,Name,Website,Size,Industry,Headquarters,Tagline,Scrape status\n`,
+      `URL,Name,Industry,Location,Size,Website,Specialties,Revenue,Open Jobs,Employees,People per location,Status\n`,
     );
 
     for (const url of urls) {
@@ -98,7 +98,7 @@ export const scrape = async (props: ScrapeProps) => {
 
         writeableStreamCsv.write(
           `${Object.values(result)
-            .map((r) => `"${r}"`)
+            .map((r) => `"${r || ''}"`)
             .join(',')}\n`,
         );
 

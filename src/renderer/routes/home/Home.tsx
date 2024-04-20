@@ -20,6 +20,13 @@ import { ScrapeFormValues, ScrapeTask } from '../../../types';
 
 import { Form } from './Home.styles';
 
+const TASK_STATUS_MESSAGE: Record<ScrapeTask['status'], string> = {
+  'in-progress': 'in progress',
+  completed: 'completed',
+  failed: 'failed',
+  partial: 'partially succeed',
+};
+
 export const Home = () => {
   const [task, setTask] = useState<ScrapeTask | null>(null);
   const [companyUrls, setCompanyUrls] = useState<string[] | null>(null);
@@ -223,7 +230,7 @@ export const Home = () => {
         <Flex gap="xs" direction="column">
           <div>
             <Text size="xl">
-              <strong>Task {task.status}</strong>
+              <strong>Task {TASK_STATUS_MESSAGE[task.status]}</strong>
             </Text>
             {task.failReason && (
               <Text c="red" size="xs">
