@@ -6,13 +6,17 @@ export interface ScrapeFormValues {
   file: File | null;
   liAt: string;
   timeout: number;
+  getLocations: boolean;
+  type: 'company-info' | 'company-jobs';
 }
 
 export interface ScrapeProps {
+  getJobs: boolean;
+  getLocations: boolean;
   liAt: string;
   timeout: number;
-  urls: string[];
   type?: 'company-info';
+  urls: string[];
 }
 
 export interface ScrapeTask {

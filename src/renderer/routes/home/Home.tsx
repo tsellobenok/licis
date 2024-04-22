@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react';
+import { yupResolver } from '@hookform/resolvers/yup';
+import * as yup from 'yup';
 import log from 'electron-log/renderer';
 import {
   ActionIcon,
   Button,
+  Checkbox,
   FileInput,
   Flex,
   NumberInput,
+  SegmentedControl,
   Text,
   TextInput,
   Tooltip,
 } from '@mantine/core';
-import { IconPlugConnected, IconX } from '@tabler/icons-react';
+import { IconBug, IconPlugConnected, IconX } from '@tabler/icons-react';
 import { useForm } from 'react-hook-form';
 
+import packageJson from '../../../../release/app/package.json';
 import { parseCSV } from '../../utils/csv';
 import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
 
 import { ScrapeFormValues, ScrapeTask } from '../../../types';
 
-import { Form } from './Home.styles';
+import { Bug, Form } from './Home.styles';
 
 const TASK_STATUS_MESSAGE: Record<ScrapeTask['status'], string> = {
   'in-progress': 'in progress',
@@ -27,16 +32,27 @@ const TASK_STATUS_MESSAGE: Record<ScrapeTask['status'], string> = {
   partial: 'partially succeed',
 };
 
+const schema = yup
+  .object({
+    file: yup.mixed().required('You have to select a file'),
+    liAt: yup.string().required('You have to to connect LinkedIn'),
+  })
+  .required();
+
 export const Home = () => {
   const [task, setTask] = useState<ScrapeTask | null>(null);
   const [companyUrls, setCompanyUrls] = useState<string[] | null>(null);
-  const { watch, handleSubmit, setValue } = useForm<ScrapeFormValues>({
-    defaultValues: {
-      file: null,
-      liAt: '',
-      timeout: 3,
-    },
-  });
+  const { watch, formState, handleSubmit, setValue } =
+    useForm<ScrapeFormValues>({
+      defaultValues: {
+        file: null,
+        getLocations: true,
+        liAt: '',
+        timeout: 3,
+        type: 'company-info',
+      },
+      resolver: yupResolver(schema) as any,
+    });
   const values = watch();
 
   const restoreLiAtFromStorage = async () => {
@@ -74,7 +90,12 @@ export const Home = () => {
     }
   };
 
-  const onSubmit = async ({ liAt, timeout }: ScrapeFormValues) => {
+  const onSubmit = async ({
+    getLocations,
+    liAt,
+    timeout,
+    type,
+  }: ScrapeFormValues) => {
     try {
       setTask({
         current: 0,
@@ -85,9 +106,10 @@ export const Home = () => {
       });
 
       await window.electron.ipcRenderer.invoke('scrape', {
+        getLocations,
         liAt,
         timeout,
-        type: 'company-info',
+        type,
         urls: companyUrls,
       });
     } catch (err) {
@@ -102,6 +124,20 @@ export const Home = () => {
 
       await window.electron.ipcRenderer.invoke('download', {
         path: `${RESULTS_PATH}/${RESULTS_FILENAME}`,
+      });
+    } catch (err) {
+      log.error('Download failed');
+      log.error(err);
+    }
+  };
+
+  const getLogs = async () => {
+    try {
+      log.info('Download invoked');
+
+      await window.electron.ipcRenderer.invoke('download', {
+        path: `./main.log`,
+        fileName: 'main.log',
       });
     } catch (err) {
       log.error('Download failed');
@@ -158,12 +194,31 @@ export const Home = () => {
 
   return (
     <Flex direction="column" gap="sm">
+      <Bug>
+        <Text size="sm" c="gray">
+          {packageJson.version}
+        </Text>
+        <ActionIcon onClick={getLogs} variant="subtle" c="red">
+          <IconBug />
+        </ActionIcon>
+      </Bug>
+
       {!task && (
         <Form onSubmit={handleSubmit(onSubmit)}>
           <Flex direction="column" gap="xs">
+            <SegmentedControl
+              data={[
+                { value: 'company-info', label: 'Company Info' },
+                { value: 'company-jobs', label: 'Company Jobs' },
+              ]}
+              onChange={(value) => setValue('type', value)}
+              value={values.type}
+            />
+
             <FileInput
               accept="text/csv"
               description="File should contain one column with Linkedin company urls"
+              error={formState.errors.file?.message}
               label="Select CSV file"
               onChange={(file) => setValue('file', file)}
               placeholder="urls.csv"
@@ -188,41 +243,46 @@ export const Home = () => {
             )}
           </Flex>
 
-          {!!values.file && (
-            <>
-              <Flex gap="sm" align="flex-end">
-                <TextInput
-                  description="Get it from cookies of linkedin"
-                  label="LiAt"
-                  onChange={(e) => setValue('liAt', e.target.value)}
-                  placeholder="li_at"
-                  value={values.liAt}
-                  rightSection={
-                    <Tooltip label="Connect LinkedIn">
-                      <ActionIcon
-                        c="gray"
-                        variant="subtle"
-                        onClick={onLiConnect}
-                      >
-                        <IconPlugConnected size="18" />
-                      </ActionIcon>
-                    </Tooltip>
-                  }
-                />
-              </Flex>
-              <NumberInput
-                description="Delay between pages in seconds (3 is recommended)"
-                label="Delay"
-                min={1}
-                onChange={(value) => setValue('timeout', Number(value) || 3)}
-                value={values.timeout}
+          <>
+            <Flex gap="sm" align="flex-end">
+              <TextInput
+                description="Click on connect icon or get it from LinkedIn cookies manually"
+                error={formState.errors.liAt?.message}
+                label="LiAt"
+                onChange={(e) => setValue('liAt', e.target.value)}
+                placeholder="li_at"
+                value={values.liAt}
+                rightSection={
+                  <Tooltip label="Connect LinkedIn">
+                    <ActionIcon c="gray" variant="subtle" onClick={onLiConnect}>
+                      <IconPlugConnected size="18" />
+                    </ActionIcon>
+                  </Tooltip>
+                }
               />
-            </>
-          )}
+            </Flex>
 
-          {!!values.file && !!companyUrls?.length && (
-            <Button type="submit">Extract company info</Button>
-          )}
+            <NumberInput
+              description="Delay between pages in seconds (3 is recommended)"
+              label="Delay"
+              min={1}
+              onChange={(value) => setValue('timeout', Number(value) || 3)}
+              value={values.timeout}
+            />
+
+            {values.type === 'company-info' && (
+              <Checkbox
+                checked={values.getLocations}
+                label="Get people per location"
+                onChange={(e) => setValue('getLocations', e.target.checked)}
+              />
+            )}
+          </>
+
+          <Button type="submit">
+            Extract{' '}
+            {values.type === 'company-info' ? 'company info' : 'company jobs'}
+          </Button>
         </Form>
       )}
 

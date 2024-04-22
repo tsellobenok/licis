@@ -26,7 +26,7 @@ export const initHandlers = () => {
 
       const results = await dialog.showSaveDialog(mainWindow, {
         title: 'Save results',
-        defaultPath: RESULTS_FILENAME,
+        defaultPath: args.fileName || RESULTS_FILENAME,
       });
 
       if (!results?.filePath) {

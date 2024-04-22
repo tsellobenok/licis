@@ -1,6 +1,6 @@
 {
-  "name": "scraper-desktop",
-  "version": "1.0.0",
+  "name": "licis",
+  "version": "1.0.1",
   "description": "App to scrape LinkedIn company info",
   "author": {
     "name": "Dzmitry Tselabionak",
@@ -13,6 +13,7 @@
     "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
   },
   "dependencies": {
+    "chrome-finder": "1.0.7",
     "electron-dl": "3.5.2",
     "puppeteer": "21.6.1",
     "puppeteer-extra": "3.3.6",

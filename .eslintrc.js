@@ -5,6 +5,7 @@ module.exports = {
     '@typescript-eslint/no-shadow': 'error',
     '@typescript-eslint/no-unused-vars': 'error',
     'import/extensions': 'off',
+    'no-await-in-loop': 'off',
     'import/no-extraneous-dependencies': 'off',
     'import/no-import-module-exports': 'off',
     'import/no-unresolved': 'off',

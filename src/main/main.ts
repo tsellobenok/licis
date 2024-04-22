@@ -5,20 +5,24 @@ import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 
 import MenuBuilder from './menu';
-import { resolveHtmlPath } from './util';
+import { getAppDataPath, resolveHtmlPath } from './util';
 import { eventBus } from './event-bus';
 import { initHandlers } from './ipc-handlers';
 import { WINDOW_HEIGHT, WINDOW_WIDTH } from '../const';
 
 class AppUpdater {
   constructor() {
-    log.transports.file.level = 'info';
     autoUpdater.logger = log;
     autoUpdater.checkForUpdatesAndNotify();
   }
 }
 
 log.initialize();
+
+console.log(path.join(getAppDataPath(), 'main.log'));
+
+log.transports.file.resolvePathFn = () =>
+  path.join(getAppDataPath(), 'main.log');
 
 let mainWindow: BrowserWindow | null = null;
 
