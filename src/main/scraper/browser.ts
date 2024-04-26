@@ -2,10 +2,10 @@ import { Browser, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import log from 'electron-log';
-import findChrome from 'chrome-finder';
 
 import { setAuthCookie } from './utils/auth';
 import { WINDOW_HEIGHT, WINDOW_WIDTH } from '../../const';
+import { getChromeExecutablePath } from '../utils/files';
 
 puppeteer.use(StealthPlugin());
 
@@ -18,8 +18,8 @@ export const startBrowser = async (
   log.info('Starting browser...');
 
   const browser = await puppeteer.launch({
-    headless: false, // TODO: REMOVE
-    executablePath: await findChrome(),
+    headless,
+    executablePath: getChromeExecutablePath(),
     args: [
       '--no-sandbox',
       `--window-size=${WINDOW_WIDTH},${WINDOW_HEIGHT}`,
@@ -34,6 +34,8 @@ export const startBrowser = async (
     ignoreHTTPSErrors: true,
   });
   const page = await browser?.newPage();
+
+  page.setViewport({ width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
 
   if (!browser || !page) {
     browser?.close();

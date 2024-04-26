@@ -2,135 +2,9 @@ import { Page } from 'puppeteer';
 import log from 'electron-log';
 import { countries } from '../../const/countries';
 import { eventBus } from '../../event-bus';
-import { createWriteStream } from '../../util';
+import { createWriteStream } from '../../utils/files';
 import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
 import { getTaskStatus } from '../utils/tasks';
-
-export const scrapeCompanyInfo = async ({
-  getLocations,
-  page,
-  timeout,
-  urls,
-}: {
-  getLocations: boolean;
-  page: Page;
-  timeout: number;
-  urls: string[];
-}) => {
-  try {
-    let aborted = false;
-    let abortReason = 'Something went wrong';
-
-    page.on('response', (response) => {
-      if (response.status() === 999) {
-        log.error('Got 999 status code. LinkedIn session expired');
-        aborted = true;
-        abortReason = 'LinkedIn session expired. Reconnect it, please';
-      }
-    });
-
-    eventBus.emit('update-task', {
-      current: 0,
-      status: 'in-progress',
-      total: urls.length,
-    });
-
-    const writeableStreamCsv = createWriteStream(
-      RESULTS_PATH,
-      RESULTS_FILENAME,
-    );
-
-    log.info('Created results file');
-
-    let successCount = 0;
-    let failCount = 0;
-    let current = 0;
-
-    writeableStreamCsv.write(
-      `URL,Name,Industry,Location,Size,Website,Specialties,Employees,People per location,Status\n`,
-    );
-
-    let completionTimes = [];
-    let timeLeft = 0;
-
-    for (const url of urls) {
-      try {
-        const startTime = new Date().getTime();
-
-        current++;
-
-        log.info(`Starting scraping ${current} of ${urls.length}: `, url);
-
-        eventBus.emit('update-task', {
-          current,
-        });
-
-        const result = await pageHandler({
-          getLocations,
-          page,
-          timeout,
-          url,
-        });
-
-        const endTime = new Date().getTime();
-
-        completionTimes.push(endTime - startTime);
-
-        eventBus.emit('time-left-update', {
-          timeLeft:
-            (completionTimes.reduce((acc, curr) => acc + curr, 0) /
-              completionTimes.length) * // average completion time
-            (urls.length - current), // urls left
-        });
-
-        writeableStreamCsv.write(
-          `${Object.values(result)
-            .map((r) => `"${r || ''}"`)
-            .join(',')}\n`,
-        );
-
-        if (result && result?.status !== 'failed') {
-          successCount++;
-          log.info(`Scraped ${current} of ${urls.length}: `, url);
-        } else {
-          failCount++;
-          log.info(`Failed to scrape ${current} of ${urls.length}: `, url);
-        }
-
-        eventBus.emit('update-task', {
-          successCount,
-          failCount,
-        });
-      } catch (err) {
-        log.error(`Error at ${current} of ${urls.length}: `, url);
-        log.error(err);
-
-        failCount++;
-
-        eventBus.emit('update-task', {
-          failCount,
-        });
-      }
-
-      if (aborted) {
-        throw new Error(abortReason);
-      }
-    }
-
-    eventBus.emit('update-task', {
-      status: getTaskStatus({ successCount, total: urls.length }),
-    });
-  } catch (err) {
-    const { message } = err as Error;
-
-    eventBus.emit('update-task', {
-      status: 'failed',
-      failReason: message,
-    });
-
-    log.error('Error while scraping', message);
-  }
-};
 
 const pageHandler = async ({
   getLocations,
@@ -296,5 +170,131 @@ const pageHandler = async ({
     log.error('Cannot get data from page', err);
 
     return { ...dataObj, status: 'failed' };
+  }
+};
+
+export const scrapeCompanyInfo = async ({
+  getLocations,
+  page,
+  timeout,
+  urls,
+}: {
+  getLocations: boolean;
+  page: Page;
+  timeout: number;
+  urls: string[];
+}) => {
+  try {
+    let aborted = false;
+    let abortReason = 'Something went wrong';
+
+    page.on('response', (response) => {
+      if (response.status() === 999) {
+        log.error('Got 999 status code. LinkedIn session expired');
+        aborted = true;
+        abortReason = 'LinkedIn session expired. Reconnect it, please';
+      }
+    });
+
+    eventBus.emit('update-task', {
+      current: 0,
+      status: 'in-progress',
+      total: urls.length,
+    });
+
+    const writeableStreamCsv = createWriteStream(
+      RESULTS_PATH,
+      RESULTS_FILENAME,
+    );
+
+    log.info('Created results file');
+
+    let successCount = 0;
+    let failCount = 0;
+    let current = 0;
+
+    writeableStreamCsv.write(
+      `URL,Name,Industry,Location,Size,Website,Specialties,Employees,People per location,Status\n`,
+    );
+
+    let completionTimes = [];
+
+    for (const url of urls) {
+      try {
+        const startTime = new Date().getTime();
+
+        current++;
+
+        log.info(`Starting scraping ${current} of ${urls.length}: `, url);
+
+        eventBus.emit('update-task', {
+          current,
+        });
+
+        const result = await pageHandler({
+          getLocations,
+          page,
+          timeout,
+          url,
+        });
+
+        const endTime = new Date().getTime();
+
+        completionTimes.push(endTime - startTime);
+
+        eventBus.emit('end-time-update', {
+          endTime:
+            (completionTimes.reduce((acc, curr) => acc + curr, 0) /
+              completionTimes.length) * // average completion time
+              (urls.length - current) +
+            Date.now(), // urls left
+        });
+
+        writeableStreamCsv.write(
+          `${Object.values(result)
+            .map((r) => `"${r || ''}"`)
+            .join(',')}\n`,
+        );
+
+        if (result && result?.status !== 'failed') {
+          successCount++;
+          log.info(`Scraped ${current} of ${urls.length}: `, url);
+        } else {
+          failCount++;
+          log.info(`Failed to scrape ${current} of ${urls.length}: `, url);
+        }
+
+        eventBus.emit('update-task', {
+          successCount,
+          failCount,
+        });
+      } catch (err) {
+        log.error(`Error at ${current} of ${urls.length}: `, url);
+        log.error(err);
+
+        failCount++;
+
+        eventBus.emit('update-task', {
+          failCount,
+        });
+      }
+
+      if (aborted) {
+        throw new Error(abortReason);
+      }
+    }
+
+    eventBus.emit('update-task', {
+      status: getTaskStatus({ successCount, total: urls.length }),
+    });
+  } catch (err) {
+    const { message } = err as Error;
+
+    eventBus.emit('update-task', {
+      status: 'failed',
+      failReason: message,
+    });
+
+    log.error('Error while scraping', message);
   }
 };

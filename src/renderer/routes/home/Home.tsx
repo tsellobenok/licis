@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
+import { formatDistance } from 'date-fns';
 import log from 'electron-log/renderer';
 import {
   ActionIcon,
+  Alert,
   Button,
   Checkbox,
   FileInput,
   Flex,
   NumberInput,
   SegmentedControl,
+  Select,
   Text,
   TextInput,
   Tooltip,
@@ -24,6 +27,7 @@ import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
 import { ScrapeFormValues, ScrapeTask } from '../../../types';
 
 import { Bug, Form } from './Home.styles';
+import { useCurrentTime } from './hooks';
 
 const TASK_STATUS_MESSAGE: Record<ScrapeTask['status'], string> = {
   'in-progress': 'in progress',
@@ -40,13 +44,16 @@ const schema = yup
   .required();
 
 export const Home = () => {
+  const [endTime, setEndTime] = useState<number | null>(0);
   const [task, setTask] = useState<ScrapeTask | null>(null);
   const [companyUrls, setCompanyUrls] = useState<string[] | null>(null);
+  const currentTime = useCurrentTime();
   const { watch, formState, handleSubmit, setValue } =
     useForm<ScrapeFormValues>({
       defaultValues: {
         file: null,
         getLocations: true,
+        jobLocation: '',
         liAt: '',
         timeout: 3,
         type: 'company-info',
@@ -55,24 +62,26 @@ export const Home = () => {
     });
   const values = watch();
 
-  const restoreLiAtFromStorage = async () => {
+  const restoreDefaultsFromStorage = async () => {
     try {
       const config = await window.electron.ipcRenderer.invoke('get-config');
 
       setValue('liAt', config?.liAt);
+      setValue('jobLocation', config?.jobLocation || 'Worldwide');
     } catch (err) {
-      log.error('Failed to get liAt from storage');
+      log.error('Failed to get config from storage');
       log.error(err);
     }
   };
 
-  const setLiAtToStorage = async (liAt: string) => {
+  const setConfigToStorage = async (formValues: ScrapeFormValues) => {
     try {
       await window.electron.ipcRenderer.invoke('update-config', {
-        liAt,
+        ...(formValues.liAt && { liAt: formValues.liAt }),
+        ...(formValues.jobLocation && { jobLocation: formValues.jobLocation }),
       });
     } catch (err) {
-      log.error('Failed to set liAt to storage.');
+      log.error('Failed to set config to storage.');
       log.error(err);
     }
   };
@@ -90,12 +99,7 @@ export const Home = () => {
     }
   };
 
-  const onSubmit = async ({
-    getLocations,
-    liAt,
-    timeout,
-    type,
-  }: ScrapeFormValues) => {
+  const onSubmit = async (formValues: ScrapeFormValues) => {
     try {
       setTask({
         current: 0,
@@ -105,11 +109,10 @@ export const Home = () => {
         total: companyUrls?.length || 0,
       });
 
+      const { file, ...rest } = formValues;
+
       await window.electron.ipcRenderer.invoke('scrape', {
-        getLocations,
-        liAt,
-        timeout,
-        type,
+        ...rest,
         urls: companyUrls,
       });
     } catch (err) {
@@ -156,16 +159,29 @@ export const Home = () => {
     }
   };
 
-  useEffect(() => {
-    if (values.liAt) {
-      setLiAtToStorage(values.liAt);
+  const getTimeText = () => {
+    if (task?.status !== 'in-progress') {
+      return '';
     }
-  }, [values.liAt]);
+
+    if (!endTime) {
+      return ' (estimating time left...)';
+    }
+
+    return ` (${formatDistance(currentTime, endTime, {
+      includeSeconds: true,
+    })} left)`;
+  };
+
+  useEffect(() => {
+    setConfigToStorage(values);
+  }, [values.liAt, values.jobLocation]);
 
   useEffect(() => {
     if (!values.file) {
       setCompanyUrls(null);
       setTask(null);
+      setEndTime(0);
 
       return;
     }
@@ -176,7 +192,7 @@ export const Home = () => {
   }, [values.file]);
 
   useEffect(() => {
-    restoreLiAtFromStorage();
+    restoreDefaultsFromStorage();
   }, []);
 
   useEffect(() => {
@@ -184,6 +200,19 @@ export const Home = () => {
       'update-task',
       (data: Partial<ScrapeTask>) => {
         setTask((current) => ({ ...(current || {}), ...data }) as ScrapeTask);
+      },
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.electron.ipcRenderer.on(
+      'end-time-update',
+      (data: { endTime: number }) => {
+        setEndTime(data.endTime);
       },
     );
 
@@ -273,8 +302,20 @@ export const Home = () => {
             {values.type === 'company-info' && (
               <Checkbox
                 checked={values.getLocations}
+                description="Collect all countries with amount of employees from People tab"
                 label="Get people per location"
                 onChange={(e) => setValue('getLocations', e.target.checked)}
+              />
+            )}
+
+            {values.type === 'company-jobs' && (
+              <TextInput
+                description={
+                  'Must be equal to the location on LinkedIn job page. Type "Worldwide" to get all'
+                }
+                label="Job location"
+                onChange={(e) => setValue('jobLocation', e.target.value)}
+                value={values.jobLocation}
               />
             )}
           </>
@@ -291,6 +332,7 @@ export const Home = () => {
           <div>
             <Text size="xl">
               <strong>Task {TASK_STATUS_MESSAGE[task.status]}</strong>
+              {getTimeText()}
             </Text>
             {task.failReason && (
               <Text c="red" size="xs">
@@ -303,7 +345,13 @@ export const Home = () => {
               {task.status === 'in-progress' ? 'Scraping' : 'Scraped'}{' '}
               <strong>{task.current}</strong> of <strong>{task.total}</strong>{' '}
               companies
+              {values.type === 'company-jobs' && (
+                <>
+                  . Got <strong>{task.jobs || 0}</strong> jobs
+                </>
+              )}
             </div>
+
             <Flex gap="xl">
               <Flex gap="xs" align="center">
                 <Text size="sm" c="green">

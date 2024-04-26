@@ -4,6 +4,7 @@ export const Form = styled.form`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 300px;
 `;
 
 export const Bug = styled.div`

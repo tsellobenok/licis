@@ -2,7 +2,7 @@
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
-export type Channels = 'update-task';
+export type Channels = 'update-task' | 'end-time-update';
 export type Handlers =
   | 'connect-linkedin'
   | 'download'

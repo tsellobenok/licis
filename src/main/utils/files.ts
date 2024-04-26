@@ -1,12 +1,43 @@
-/* eslint import/prefer-default-export: off */
+import { app } from 'electron';
+import path from 'path';
 import { URL } from 'url';
 import fs from 'fs';
-import path from 'path';
-import log from 'electron-log';
 
-import { APP_NAME, CONFIG_PATH } from '../const';
+import { APP_NAME } from '../../const';
 
-import { AppConfig } from '../types';
+export const getAssetPath = (...paths: string[]): string => {
+  const RESOURCES_PATH = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(__dirname, '../../../assets');
+
+  return path.join(RESOURCES_PATH, ...paths);
+};
+
+export const getChromeExecutablePath = () => {
+  switch (process.platform) {
+    case 'darwin': {
+      return path.resolve(
+        getAssetPath(),
+        '.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64',
+      );
+    }
+    case 'win32': {
+      return path.resolve(
+        getAssetPath(),
+        '.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64',
+      );
+    }
+    case 'linux': {
+      return path.resolve(
+        getAssetPath(),
+        '.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64/chrome',
+      );
+    }
+    default: {
+      return './';
+    }
+  }
+};
 
 export const resolveHtmlPath = (htmlFileName: string) => {
   if (process.env.NODE_ENV === 'development') {
@@ -69,34 +100,5 @@ export const createWriteStream = (filePath: string, filename: string) => {
 
   return fs.createWriteStream(
     path.resolve(getAppDataPath(), filePath, filename),
-  );
-};
-
-export const getConfig = (): Partial<AppConfig> => {
-  let result = {};
-
-  if (!fs.existsSync(path.resolve(getAppDataPath(), CONFIG_PATH))) {
-    return result;
-  }
-
-  try {
-    result = JSON.parse(readAppFile(CONFIG_PATH));
-  } catch (err) {
-    log.info('Cannot parse config. ', err);
-  }
-
-  return result || {};
-};
-
-export const updateConfig = (newConfig: Partial<AppConfig>) => {
-  log.info('Updating config', newConfig);
-
-  writeAppFile(
-    './',
-    CONFIG_PATH,
-    JSON.stringify({
-      ...getConfig(),
-      ...newConfig,
-    }),
   );
 };

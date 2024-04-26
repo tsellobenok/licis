@@ -5,10 +5,10 @@ import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 
 import MenuBuilder from './menu';
-import { getAppDataPath, resolveHtmlPath } from './util';
 import { eventBus } from './event-bus';
 import { initHandlers } from './ipc-handlers';
 import { WINDOW_HEIGHT, WINDOW_WIDTH } from '../const';
+import { getAssetPath, getAppDataPath, resolveHtmlPath } from './utils/files';
 
 class AppUpdater {
   constructor() {
@@ -58,13 +58,6 @@ const createWindow = async () => {
     await installExtensions();
   }
 
-  const RESOURCES_PATH = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
-
-  const getAssetPath = (...paths: string[]): string =>
-    path.join(RESOURCES_PATH, ...paths);
-
   mainWindow = new BrowserWindow({
     show: false,
     width: WINDOW_WIDTH,
@@ -79,7 +72,7 @@ const createWindow = async () => {
 
   mainWindow.loadURL(resolveHtmlPath('index.html'));
 
-  mainWindow.on('ready-to-show', () => {
+  mainWindow.on('ready-to-show', async () => {
     if (!mainWindow) {
       throw new Error('"mainWindow" is not defined');
     }
@@ -91,6 +84,7 @@ const createWindow = async () => {
   });
 
   mainWindow.on('closed', () => {
+    eventBus.emit('stop-scraping');
     mainWindow = null;
   });
 
