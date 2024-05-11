@@ -1,38 +1,48 @@
 import { Page } from 'puppeteer';
 import log from 'electron-log';
 
+import { AccountCredentials } from '../../../types';
+
 export const setAuthCookie = async (page: Page, liAt: string) => {
   await page.goto('https://linkedin.com');
   await page.setCookie({ name: 'li_at', value: liAt });
   log.info('Set li_at to page cookies: ', liAt);
 };
 
-const delay = (timeout: number) =>
-  new Promise((resolve) => setTimeout(resolve, timeout * 1000));
-
-export const getLiAt = async (page: Page): Promise<string> => {
-  await page.goto('https://linkedin.com');
-  await page.waitForSelector(
-    'button[data-control-name="ga-cookie.consent.deny.v4"]',
+export const getAccountMeta = async (
+  page: Page,
+  creds: AccountCredentials,
+): Promise<{ name: string; avatar: string; liAt: string }> => {
+  await page.goto(
+    'https://www.linkedin.com/login?fromSignIn=true&trk=guest_homepage-basic_nav-header-signin',
   );
-  await page.click('button[data-control-name="ga-cookie.consent.deny.v4"]');
-  await page.waitForSelector('.feed-identity-module__actor-meta', {
-    timeout: 0,
+
+  await page.waitForTimeout(300);
+
+  await page.type('#username', creds?.email || '');
+  await page.type('#password', creds?.password || '');
+  await page.waitForTimeout(400);
+  await page.click('button[type="submit"]');
+  await page.waitForSelector('.feed-identity-module__actor-meta');
+
+  const cookies = await page.cookies();
+
+  const liAt = cookies.find((cookie) => cookie.name === 'li_at')?.value || '';
+
+  const { name, avatar } = await page.evaluate(() => {
+    const avatarSrc = (
+      document.querySelector(
+        '.feed-identity-module__actor-meta img',
+      ) as HTMLImageElement
+    )?.src;
+    const fullName = (
+      document.querySelector(
+        '.feed-identity-module__actor-meta a',
+      ) as HTMLLinkElement
+    )?.innerText;
+
+    return { name: fullName, avatar: avatarSrc };
   });
 
-  let liAt;
-
-  while (true) {
-    const cookies = await page.cookies();
-
-    liAt = cookies.find((cookie) => cookie.name === 'li_at')?.value;
-
-    if (liAt) {
-      break;
-    }
-
-    await delay(1);
-  }
-
-  return liAt || '';
+  return { liAt, name, avatar };
 };

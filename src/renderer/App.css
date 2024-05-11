@@ -3,12 +3,13 @@
  *        See https://github.com/webpack-contrib/sass-loader#imports
  */
 body {
-  align-items: center;
-  background: #fbfbf9;
-  display: flex;
+  background: #F8F8F8;
   font-family: sans-serif;
   height: 100vh;
-  justify-content: center;
-  overflow-y: hidden;
   position: relative;
+  width: 100vw;
+}
+
+*:where([data-combobox-selected]) {
+  background: #f8f9fa !important;
 }

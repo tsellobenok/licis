@@ -1,136 +1,14 @@
 import { Page } from 'puppeteer';
 import log from 'electron-log';
-import { countries } from '../../const/countries';
-import { eventBus } from '../../event-bus';
-import { createWriteStream } from '../../util';
+
 import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
+import { countries } from '../../const/countries';
+import { createWriteStream } from '../../utils/files';
+import { getConfig, updateConfig } from '../../utils/config';
 import { getTaskStatus } from '../utils/tasks';
+import { syncTask } from '../../utils/renderer-communication';
 
-export const scrapeCompanyInfo = async ({
-  getLocations,
-  page,
-  timeout,
-  urls,
-}: {
-  getLocations: boolean;
-  page: Page;
-  timeout: number;
-  urls: string[];
-}) => {
-  try {
-    let aborted = false;
-    let abortReason = 'Something went wrong';
-
-    page.on('response', (response) => {
-      if (response.status() === 999) {
-        log.error('Got 999 status code. LinkedIn session expired');
-        aborted = true;
-        abortReason = 'LinkedIn session expired. Reconnect it, please';
-      }
-    });
-
-    eventBus.emit('update-task', {
-      current: 0,
-      status: 'in-progress',
-      total: urls.length,
-    });
-
-    const writeableStreamCsv = createWriteStream(
-      RESULTS_PATH,
-      RESULTS_FILENAME,
-    );
-
-    log.info('Created results file');
-
-    let successCount = 0;
-    let failCount = 0;
-    let current = 0;
-
-    writeableStreamCsv.write(
-      `URL,Name,Industry,Location,Size,Website,Specialties,Employees,People per location,Status\n`,
-    );
-
-    let completionTimes = [];
-    let timeLeft = 0;
-
-    for (const url of urls) {
-      try {
-        const startTime = new Date().getTime();
-
-        current++;
-
-        log.info(`Starting scraping ${current} of ${urls.length}: `, url);
-
-        eventBus.emit('update-task', {
-          current,
-        });
-
-        const result = await pageHandler({
-          getLocations,
-          page,
-          timeout,
-          url,
-        });
-
-        const endTime = new Date().getTime();
-
-        completionTimes.push(endTime - startTime);
-
-        eventBus.emit('time-left-update', {
-          timeLeft:
-            (completionTimes.reduce((acc, curr) => acc + curr, 0) /
-              completionTimes.length) * // average completion time
-            (urls.length - current), // urls left
-        });
-
-        writeableStreamCsv.write(
-          `${Object.values(result)
-            .map((r) => `"${r || ''}"`)
-            .join(',')}\n`,
-        );
-
-        if (result && result?.status !== 'failed') {
-          successCount++;
-          log.info(`Scraped ${current} of ${urls.length}: `, url);
-        } else {
-          failCount++;
-          log.info(`Failed to scrape ${current} of ${urls.length}: `, url);
-        }
-
-        eventBus.emit('update-task', {
-          successCount,
-          failCount,
-        });
-      } catch (err) {
-        log.error(`Error at ${current} of ${urls.length}: `, url);
-        log.error(err);
-
-        failCount++;
-
-        eventBus.emit('update-task', {
-          failCount,
-        });
-      }
-
-      if (aborted) {
-        throw new Error(abortReason);
-      }
-    }
-
-    eventBus.emit('update-task', {
-      status: getTaskStatus({ successCount, total: urls.length }),
-    });
-  } catch (err) {
-    const { message } = err as Error;
-
-    eventBus.emit('update-task', {
-      status: 'failed',
-      failReason: message,
-    });
-
-    log.error('Error while scraping', message);
-  }
-};
+import { Account, TaskStatus } from '../../../types';
 
 const pageHandler = async ({
   getLocations,
@@ -138,7 +16,7 @@ const pageHandler = async ({
   timeout = 20000,
   url,
 }: {
-  getLocations: boolean;
+  getLocations?: boolean;
   page: Page;
   timeout: number;
   url: string;
@@ -151,7 +29,7 @@ const pageHandler = async ({
     size: '',
     website: '',
     specialties: '',
-    recentFounding: '',
+    recentFunding: '',
     employees: '',
     peoplePerLocation: '',
     status: '',
@@ -202,13 +80,13 @@ const pageHandler = async ({
 
         if (currentEl.nodeName === 'DT') {
           acc[currentEl.innerText] = null;
-          latestDt = currentEl.innerText;
+          latestDt = currentEl.innerText || 'Unavailable';
           return acc;
         }
 
         acc[latestDt] = acc[latestDt]
           ? `${acc[latestDt]}\n${currentEl.innerText}`
-          : currentEl.innerText;
+          : currentEl.innerText || 'Unavailable';
 
         return acc;
       }, {});
@@ -220,22 +98,30 @@ const pageHandler = async ({
           document.querySelector(
             'h1.org-top-card-summary__title',
           ) as HTMLHeadingElement
-        )?.innerText,
+        )?.innerText || 'Unavailable',
     )}`;
-    dataObj.website = valuesObj.Website || '';
-    dataObj.industry = valuesObj.Industry || '';
-    dataObj.location = valuesObj.Headquarters || '';
-    dataObj.specialties = valuesObj.Specialties || '';
+    dataObj.website = valuesObj.Website || 'Unavailable';
+    dataObj.industry = valuesObj.Industry || 'Unavailable';
+    dataObj.location = valuesObj.Headquarters || 'Unavailable';
+    dataObj.specialties = valuesObj.Specialties || 'Unavailable';
     dataObj.size =
       valuesObj['Company size']
         ?.split('\n')[0]
         ?.split(' ')[0]
-        ?.replace(/,/g, '') || '';
+        ?.replace(/,/g, '') || 'Unavailable';
     dataObj.employees =
       valuesObj['Company size']
         ?.split('\n')[1]
         ?.split(' ')[0]
-        ?.replace(/,/g, '') || '';
+        ?.replace(/,/g, '') || 'Unavailable';
+    dataObj.recentFunding = await page.evaluate(
+      () =>
+        (
+          document.querySelector(
+            '.org-funding__card-spacing section:nth-of-type(2)',
+          ) as HTMLElement
+        )?.innerText || 'Unavailable',
+    );
 
     if (getLocations) {
       await page.evaluate(
@@ -296,5 +182,129 @@ const pageHandler = async ({
     log.error('Cannot get data from page', err);
 
     return { ...dataObj, status: 'failed' };
+  }
+};
+
+export const scrapeCompanyInfo = async ({
+  getLocations,
+  page,
+  timeout,
+  urls,
+}: {
+  getLocations?: boolean;
+  page: Page;
+  timeout: number;
+  urls: string[];
+}) => {
+  try {
+    let aborted = false;
+    let abortReason = 'Something went wrong';
+
+    page.on('response', (response) => {
+      if (response.status() === 999 || response.status() === 429) {
+        log.error(
+          `Got ${response.status()} status code. LinkedIn session expired`,
+        );
+        aborted = true;
+        abortReason = 'LinkedIn session expired. Reconnect it, please';
+
+        const { accounts } = getConfig();
+
+        updateConfig(
+          JSON.stringify({
+            accounts:
+              accounts?.map((acc: Account) =>
+                acc.selected
+                  ? {
+                      ...acc,
+                      liAt: null,
+                    }
+                  : acc,
+              ) || [],
+          }),
+        );
+      }
+    });
+
+    syncTask({
+      current: 0,
+      status: TaskStatus.InProgress,
+      total: urls.length,
+    });
+
+    const writeableStreamCsv = createWriteStream(
+      RESULTS_PATH,
+      RESULTS_FILENAME,
+    );
+
+    log.info('Created results file');
+
+    let successCount = 0;
+    let failCount = 0;
+    let current = 0;
+
+    writeableStreamCsv.write(
+      `URL,Name,Industry,Location,Size,Website,Specialties,Recent funding,Employees,People per location,Status\n`,
+    );
+
+    for (const url of urls) {
+      try {
+        current++;
+
+        log.info(`Starting scraping ${current} of ${urls.length}: `, url);
+
+        syncTask({ current });
+
+        const result = await pageHandler({
+          getLocations,
+          page,
+          timeout,
+          url,
+        });
+
+        writeableStreamCsv.write(
+          `${Object.values(result)
+            .map((r) => `"${r || ''}"`)
+            .join(',')}\n`,
+        );
+
+        if (result && result?.status !== 'failed') {
+          successCount++;
+          log.info(`Scraped ${current} of ${urls.length}: `, url);
+        } else {
+          failCount++;
+          log.info(`Failed to scrape ${current} of ${urls.length}: `, url);
+        }
+
+        syncTask({
+          successCount,
+          failCount,
+        });
+      } catch (err) {
+        log.error(`Error at ${current} of ${urls.length}: `, url);
+        log.error(err);
+
+        failCount++;
+
+        syncTask({ failCount });
+      }
+
+      if (aborted) {
+        throw new Error(abortReason);
+      }
+    }
+
+    syncTask({
+      status: getTaskStatus({ successCount, total: urls.length }),
+    });
+  } catch (err) {
+    const { message } = err as Error;
+
+    syncTask({
+      status: TaskStatus.Failed,
+      failReason: message,
+    });
+
+    log.error('Error while scraping', message);
   }
 };

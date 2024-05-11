@@ -1,31 +1,101 @@
 import { Page } from 'puppeteer';
 import log from 'electron-log';
-import { eventBus } from '../../event-bus';
-import { createWriteStream } from '../../util';
-import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
-import { getTaskStatus } from '../utils/tasks';
 
-const parsePage = async ({ page }: { page: Page }) => {
-  const jobsList = await page.evaluate(() =>
-    Array.from(
-      document.querySelectorAll('ul.scaffold-layout__list-container li'),
-    ),
+import { RESULTS_FILENAME, RESULTS_PATH } from '../../../const';
+import { createWriteStream } from '../../utils/files';
+import { getConfig, updateConfig } from '../../utils/config';
+import { getTaskStatus } from '../utils/tasks';
+import { syncTask } from '../../utils/renderer-communication';
+
+import { Account, JobResult, TaskStatus } from '../../../types';
+
+interface PageHandlerResult {
+  jobs: JobResult[];
+  status: TaskStatus;
+  url: string;
+}
+
+let parsedJobsCount = 0;
+
+const parsePage = async ({ page }: { page: Page }): Promise<JobResult[]> => {
+  const noJobs = await page.evaluate(
+    () =>
+      (
+        document.querySelector(
+          'header.scaffold-layout__list-header',
+        ) as HTMLDivElement
+      )?.innerText?.includes('Jobs you may be interested in'),
   );
 
+  if (noJobs) {
+    return [];
+  }
+
+  const jobsList = (await page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll('ul.scaffold-layout__list-container > li'),
+    ),
+  )) as HTMLLIElement[];
   const jobs = [];
 
-  for (let i = 0; i < jobsList.length; i++) {
+  for (let currentJob = 1; currentJob <= jobsList.length; currentJob++) {
     await page.click(
-      `ul.scaffold-layout__list-container li:nth-child(${i + 1})`,
+      `ul.scaffold-layout__list-container > li:nth-child(${currentJob})`,
     );
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000 + Math.round(Math.random() * 1000));
 
-    const results = await page.evaluate((i) => {
+    const result: JobResult = await page.evaluate((current) => {
       const el = document.querySelector(
-        'ul.scaffold-layout__list-container li:nth-child(' + (i + 1) + ')',
+        `ul.scaffold-layout__list-container > li:nth-child(${current})`,
       );
 
-      const url = (el.querySelector('a') as HTMLAnchorElement)?.href;
+      const isTertiary = !!document.querySelector(
+        '.job-details-jobs-unified-top-card__tertiary-description',
+      );
+
+      if (isTertiary) {
+        const url = (
+          (el as HTMLElement).querySelector('a') as HTMLAnchorElement
+        )?.href;
+        const title = (
+          document.querySelector(
+            '.job-details-jobs-unified-top-card__job-title',
+          ) as HTMLAnchorElement
+        )?.innerText;
+        const companyName = (
+          document.querySelector(
+            '.job-view-layout .job-details-jobs-unified-top-card__company-name',
+          ) as HTMLDivElement
+        )?.innerText;
+
+        const [location, whenPosted, numberOfApplicants] = Array.from(
+          document.querySelectorAll('.job-view-layout .tvm__text'),
+        )
+          .map((i) => (i as HTMLSpanElement).innerText)
+          .filter((i) => i !== ' · ');
+
+        const description = (
+          document.querySelector(
+            '.jobs-description-content__text',
+          ) as HTMLElement
+        )?.innerText;
+
+        return {
+          url,
+          companyName,
+          title,
+          description,
+          location,
+          whenPosted,
+          numberOfApplicants: numberOfApplicants?.replace(
+            / applicant(s?)/g,
+            '',
+          ),
+        };
+      }
+
+      const url = ((el as HTMLElement).querySelector('a') as HTMLAnchorElement)
+        ?.href;
       const title = (
         document.querySelector(
           '.job-details-jobs-unified-top-card__job-title',
@@ -35,11 +105,11 @@ const parsePage = async ({ page }: { page: Page }) => {
         (
           document.querySelector(
             '.job-details-jobs-unified-top-card__primary-description-without-tagline',
-          ) as HTMLAnchorElement
+          ) as HTMLElement
         )?.innerText?.split(' · ') || [];
-      const description = document.querySelector(
-        '.jobs-description-content__text',
-      );
+      const description = (
+        document.querySelector('.jobs-description-content__text') as HTMLElement
+      )?.innerText;
 
       return {
         url,
@@ -48,36 +118,37 @@ const parsePage = async ({ page }: { page: Page }) => {
         description,
         location,
         whenPosted,
-        numberOfApplicants,
+        numberOfApplicants: numberOfApplicants?.replace(/ applicant(s?)/g, ''),
       };
-    }, i);
+    }, currentJob);
 
-    jobs.push(results);
+    jobs.push(result);
+
+    parsedJobsCount++;
+
+    syncTask({
+      jobs: parsedJobsCount,
+    });
   }
 
   return jobs;
 };
 
 const pageHandler = async ({
+  jobLocation = 'Worldwide',
   page,
-  timeout = 20000,
+  timeout = 3000,
   url,
 }: {
-  getLocations: boolean;
+  jobLocation?: string;
   page: Page;
   timeout: number;
   url: string;
-}) => {
-  const dataObj = {
+}): Promise<PageHandlerResult> => {
+  const dataObj: PageHandlerResult = {
+    jobs: [],
+    status: TaskStatus.InProgress,
     url,
-    companyName: '',
-    employees: '',
-    location: '',
-    postedAt: '',
-    skills: '',
-    title: '',
-    description: '',
-    status: 'in-progress',
   };
 
   try {
@@ -96,102 +167,123 @@ const pageHandler = async ({
     ) {
       return {
         ...dataObj,
-        status: 'failed',
+        status: TaskStatus.Failed,
       };
     }
 
-    await page.goto(
-      'https://www.linkedin.com/jobs/search/?currentJobId=3864817543&f_C=1441%2C10434300%2C10437069%2C28658883%2C8276%2C99942982%2C15154437%2C202869%2C11448%2C1354499%2C1363825%2C1586%2C165158%2C4972%2C76987811%2C7846%2C86157465&geoId=92000000&keywords=google&location=Worldwide&origin=JOB_SEARCH_PAGE_LOCATION_AUTOCOMPLETE&refresh=true&sortBy=R',
-    );
-
     // Wait for elements to load
-    // try {
-    //   await page.waitForSelector('.org-jobs-job-search-form-module__headline', {
-    //     timeout: 5000,
-    //   });
-    // } catch (err) {
-    //   log.error(`Can't find required headline element on the page ${url}`);
-    //   log.error(err);
-    //
-    //   return {
-    //     ...dataObj,
-    //     status: 'failed',
-    //   };
-    // }
+    try {
+      await page.waitForSelector(
+        '.org-jobs-job-search-form-module__action-container a',
+        {
+          timeout: 5000,
+        },
+      );
+    } catch (err) {
+      log.error(`Can't find required element on the page ${url}`);
+      log.error(err);
 
-    // await page.evaluate(
-    //   () =>
-    //     (
-    //       document.querySelector(
-    //         '.org-jobs-recently-posted-jobs-module__show-all-jobs-btn a',
-    //       ) as HTMLAnchorElement
-    //     )?.click(),
-    // );
+      return {
+        ...dataObj,
+        status: TaskStatus.Failed,
+      };
+    }
+
+    // Go to search jobs page
+    await page.evaluate(() => {
+      const search = document.querySelector(
+        '.org-jobs-job-search-form-module__action-container a',
+      ) as HTMLAnchorElement;
+
+      search.target = '_self';
+      search.click();
+    });
 
     await page.waitForSelector('ul.scaffold-layout__list-container');
 
-    const allJobs = [];
+    await page.click('input[aria-label="City, state, or zip code"]', {
+      count: 2,
+    });
 
-    const pageJobs = await parsePage({ page });
-
-    allJobs.push(...pageJobs);
-
-    const paginationItems = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('ul.artdeco-pagination__pages li')),
+    await page.type(
+      'input[aria-label="City, state, or zip code"]',
+      jobLocation,
     );
+    await page.waitForTimeout(1000);
+    await page.keyboard.press('Enter');
 
-    if (paginationItems.length) {
-      const totalPages =
+    await page.waitForTimeout(10000);
+
+    const totalPages = await page.evaluate(() => {
+      const paginationItems = Array.from(
+        document.querySelectorAll('ul.artdeco-pagination__pages li'),
+      );
+
+      return (
         Number(
-          (paginationItems[paginationItems.length - 1] as HTMLLIElement).dataset
-            .testPaginationPageBtn,
-        ) || 0;
+          (paginationItems[paginationItems.length - 1] as HTMLLIElement)
+            ?.dataset.testPaginationPageBtn,
+        ) || 1
+      );
+    });
 
-      for (let currentPage = 1; currentPage < totalPages; currentPage++) {
-        const currentPageJobs = await parsePage({ page });
+    log.info('Total pages: ', totalPages);
 
-        allJobs.push(...currentPageJobs);
+    for (let currentPage = 1; currentPage < totalPages + 1; currentPage++) {
+      log.info(`Started scraping job page #${currentPage}`);
 
-        const currentPaginationItems = await page.evaluate(() =>
-          Array.from(
-            document.querySelectorAll('ul.artdeco-pagination__pages li'),
-          ),
+      const currentPageJobs = await parsePage({
+        page,
+      });
+
+      dataObj.jobs.push(...currentPageJobs);
+
+      await page.mouse.move(
+        Math.round(Math.random() * 1300),
+        Math.round(Math.random() * 700),
+      );
+
+      await page.evaluate((current) => {
+        const currentPaginationItems = Array.from(
+          document.querySelectorAll('ul.artdeco-pagination__pages li'),
         );
+
         const next = currentPaginationItems.find(
           (item) =>
-            item.dataset?.testPaginationPageBtn === `${currentPage + 1}`,
-        );
+            (item as HTMLLIElement)?.dataset.testPaginationPageBtn ===
+            `${current + 1}`,
+        ) as HTMLLIElement | undefined;
 
         if (next) {
-          next.click();
+          next.querySelector('button')?.click();
         } else {
-          paginationItems[paginationItems.length - 2].click(); // Should be 3 dots button
+          currentPaginationItems[currentPaginationItems.length - 2]
+            ?.querySelector('button')
+            ?.click(); // Should be 3 dots button
         }
+      }, currentPage);
 
-        await page.waitForTimeout(1000);
-      }
+      await page.waitForTimeout(timeout);
     }
 
-    await page.waitForTimeout(timeout);
-
-    dataObj.status = 'success';
+    dataObj.status = TaskStatus.Completed;
 
     return dataObj;
   } catch (err) {
     log.error(`Failed to parse page ${url}`);
     log.error('Cannot get data from page', err);
 
-    return { ...dataObj, status: 'failed' };
+    return { ...dataObj, status: TaskStatus.Failed };
   }
 };
 
 export const scrapeCompanyJobs = async ({
-  getLocations,
+  jobLocation,
   page,
   timeout,
   urls,
 }: {
-  getLocations: boolean;
+  jobLocation?: string;
   page: Page;
   timeout: number;
   urls: string[];
@@ -200,17 +292,35 @@ export const scrapeCompanyJobs = async ({
     let aborted = false;
     let abortReason = 'Something went wrong';
 
+    parsedJobsCount = 0;
+
     page.on('response', (response) => {
-      if (response.status() === 999) {
-        log.error('Got 999 status code. LinkedIn session expired');
+      if (response.status() === 999 || response.status() === 429) {
+        log.error(
+          `Got ${response.status()} status code. LinkedIn session expired`,
+        );
         aborted = true;
         abortReason = 'LinkedIn session expired. Reconnect it, please';
+
+        const { accounts } = getConfig();
+
+        updateConfig({
+          accounts:
+            accounts?.map((acc: Account) =>
+              acc.selected
+                ? {
+                    ...acc,
+                    liAt: null,
+                  }
+                : acc,
+            ) || [],
+        });
       }
     });
 
-    eventBus.emit('update-task', {
+    syncTask({
       current: 0,
-      status: 'in-progress',
+      status: TaskStatus.InProgress,
       total: urls.length,
     });
 
@@ -226,49 +336,43 @@ export const scrapeCompanyJobs = async ({
     let current = 0;
 
     writeableStreamCsv.write(
-      `URL,Name,Industry,Location,Size,Website,Specialties,Open Jobs,Employees,People per location,Status\n`,
+      `Company URL,Company Name,Job URL,Title,Description,Location,Posted At,Number of Applicants,Status\n`,
     );
-
-    let completionTimes = [];
-    let timeLeft = 0;
 
     for (const url of urls) {
       try {
-        const startTime = new Date().getTime();
-
         current++;
 
         log.info(`Starting scraping ${current} of ${urls.length}: `, url);
 
-        eventBus.emit('update-task', {
-          current,
-        });
+        syncTask({ current });
 
         const result = await pageHandler({
-          getLocations,
+          jobLocation,
           page,
           timeout,
           url,
         });
 
-        const endTime = new Date().getTime();
-
-        completionTimes.push(endTime - startTime);
-
-        eventBus.emit('time-left-update', {
-          timeLeft:
-            (completionTimes.reduce((acc, curr) => acc + curr, 0) /
-              completionTimes.length) * // average completion time
-            (urls.length - current), // urls left
+        result.jobs.forEach((job) => {
+          writeableStreamCsv.write(
+            `${[
+              result.url,
+              job.companyName,
+              job.url,
+              job.title,
+              job.description,
+              job.location,
+              job.whenPosted,
+              job.numberOfApplicants,
+              result.status,
+            ]
+              .map((r) => `"${(r || '').replace(/"/g, '""')}"`)
+              .join(',')}\n`,
+          );
         });
 
-        writeableStreamCsv.write(
-          `${Object.values(result)
-            .map((r) => `"${r || ''}"`)
-            .join(',')}\n`,
-        );
-
-        if (result && result?.status !== 'failed') {
+        if (result && result?.status !== TaskStatus.Failed) {
           successCount++;
           log.info(`Scraped ${current} of ${urls.length}: `, url);
         } else {
@@ -276,7 +380,7 @@ export const scrapeCompanyJobs = async ({
           log.info(`Failed to scrape ${current} of ${urls.length}: `, url);
         }
 
-        eventBus.emit('update-task', {
+        syncTask({
           successCount,
           failCount,
         });
@@ -286,7 +390,7 @@ export const scrapeCompanyJobs = async ({
 
         failCount++;
 
-        eventBus.emit('update-task', {
+        syncTask({
           failCount,
         });
       }
@@ -296,14 +400,14 @@ export const scrapeCompanyJobs = async ({
       }
     }
 
-    eventBus.emit('update-task', {
+    syncTask({
       status: getTaskStatus({ successCount, total: urls.length }),
     });
   } catch (err) {
     const { message } = err as Error;
 
-    eventBus.emit('update-task', {
-      status: 'failed',
+    syncTask({
+      status: TaskStatus.Failed,
       failReason: message,
     });
 

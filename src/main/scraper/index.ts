@@ -4,8 +4,8 @@ import { scrapeCompanyInfo } from './handlers/company-info';
 import { scrapeCompanyJobs } from './handlers/company-jobs';
 
 import { eventBus } from '../event-bus';
-import { startBrowser, startBrowserAndLogin } from './browser';
-import { getLiAt } from './utils/auth';
+import { getConfig } from '../utils/config';
+import { startBrowserAndLogin } from './browser';
 
 import { ScrapeProps } from '../../types';
 
@@ -14,49 +14,36 @@ const SCRAPERS = {
   'company-jobs': scrapeCompanyJobs,
 };
 
-export const connectToLinkedIn = async () => {
-  const { browser, page } = await startBrowser(false);
+export const scrape = async (props: ScrapeProps) => {
+  const { accounts, jobLocation, raiseTheHood, getLocations } = getConfig();
+  const selectedAccount = accounts?.find((acc) => acc.selected);
 
-  log.info('Start connection to LinkedIn...');
-
-  let liAt = '';
-
-  try {
-    liAt = await getLiAt(page);
-
-    log.info('Got li_at:', liAt);
-  } catch (err) {
-    log.error('Failed to get li_at:', err);
+  if (!selectedAccount || !selectedAccount?.liAt) {
+    log.error(
+      'Cannot start scraping. No account selected or no liAt in the account',
+    );
 
     eventBus.emit('notification', {
-      title: `Failed to connect to LinkedIn`,
-      body: 'Try to get li_at cookie manually',
+      body: 'Linkedin connection is required',
+      title: `Failed to start scraping`,
     });
+
+    return;
   }
 
-  browser?.close();
-
-  return liAt;
-};
-
-export const scrape = async (props: ScrapeProps) => {
-  const { liAt, urls, type = 'company-info', ...rest } = props;
-  const { page, stopBrowser } = await startBrowserAndLogin(liAt);
-
-  const onStopScraping = () => {
-    stopBrowser();
-    log.error('Scrapping forcefully stopped');
-  };
-
-  eventBus.on('stop-scraping', onStopScraping);
+  const { urls, type = 'company-info', ...rest } = props;
+  const { page } = await startBrowserAndLogin(
+    selectedAccount.liAt,
+    raiseTheHood,
+  );
 
   await SCRAPERS[type]({
+    getLocations,
+    jobLocation,
     page,
     urls,
     ...rest,
   });
 
-  eventBus.off('stop-scraping', onStopScraping);
-
-  stopBrowser();
+  eventBus.emit('stop-browser');
 };

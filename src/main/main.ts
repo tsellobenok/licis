@@ -5,10 +5,10 @@ import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 
 import MenuBuilder from './menu';
-import { getAppDataPath, resolveHtmlPath } from './util';
-import { eventBus } from './event-bus';
-import { initHandlers } from './ipc-handlers';
 import { WINDOW_HEIGHT, WINDOW_WIDTH } from '../const';
+import { eventBus } from './event-bus';
+import { getAssetPath, getAppDataPath, resolveHtmlPath } from './utils/files';
+import { initHandlers } from './utils/ipc-handlers';
 
 class AppUpdater {
   constructor() {
@@ -19,14 +19,10 @@ class AppUpdater {
 
 log.initialize();
 
-console.log(path.join(getAppDataPath(), 'main.log'));
-
 log.transports.file.resolvePathFn = () =>
   path.join(getAppDataPath(), 'main.log');
 
 let mainWindow: BrowserWindow | null = null;
-
-initHandlers(mainWindow);
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -58,13 +54,6 @@ const createWindow = async () => {
     await installExtensions();
   }
 
-  const RESOURCES_PATH = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
-
-  const getAssetPath = (...paths: string[]): string =>
-    path.join(RESOURCES_PATH, ...paths);
-
   mainWindow = new BrowserWindow({
     show: false,
     width: WINDOW_WIDTH,
@@ -91,6 +80,7 @@ const createWindow = async () => {
   });
 
   mainWindow.on('closed', () => {
+    eventBus.emit('stop-browser');
     mainWindow = null;
   });
 
@@ -109,7 +99,7 @@ const createWindow = async () => {
 };
 
 app.on('window-all-closed', () => {
-  eventBus.emit('stop-scraping');
+  eventBus.emit('stop-browser');
 
   if (process.platform !== 'darwin') {
     app.quit();
@@ -127,3 +117,5 @@ app
     });
   })
   .catch(console.log);
+
+initHandlers();

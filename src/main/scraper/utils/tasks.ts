@@ -1,4 +1,4 @@
-import { ScrapeTask } from '../../../types';
+import { ScrapeTask, TaskStatus } from '../../../types';
 
 export const getTaskStatus = ({
   successCount,
@@ -8,12 +8,12 @@ export const getTaskStatus = ({
   total: number;
 }): ScrapeTask['status'] => {
   if (successCount === total) {
-    return 'completed';
+    return TaskStatus.Completed;
   }
 
   if (successCount > 0) {
-    return 'partial';
+    return TaskStatus.Partial;
   }
 
-  return 'failed';
+  return TaskStatus.Failed;
 };
