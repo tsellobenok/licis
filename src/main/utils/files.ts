@@ -20,13 +20,13 @@ export const getChromeExecutablePath = () => {
     case 'darwin': {
       return path.resolve(
         getAssetPath(),
-        './chrome/mac_arm-121.0.6167.85/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+        './chrome/mac_arm-121.0.6167.85/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
       );
     }
     case 'win32': {
       return path.resolve(
         getAssetPath(),
-        './chrome/win-121.0.6167.85/win-x64',
+        './chrome/win64-121.0.6167.85/chrome-win64/chrome.exe',
       );
     }
     case 'linux': {
