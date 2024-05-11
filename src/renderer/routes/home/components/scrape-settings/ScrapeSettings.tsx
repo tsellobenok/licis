@@ -7,12 +7,11 @@ import { Group, GroupLabel, Wrapper } from './ScrapeSettings.styles';
 import { Debug } from '../debug';
 
 interface Props {
-  config: AppConfig;
-  updateConfig: (data: Partial<AppConfig>) => void;
+  config: AppConfig | null;
+  updateConfig: (data: AppConfig) => Promise<void>;
 }
 
 export const ScrapeSettings = ({ config, updateConfig }: Props) => {
-
   if (!config) {
     return null;
   }

@@ -133,7 +133,7 @@ export const connectToLinkedIn = async (
     log.error('Failed to get account meta:');
     log.error(err);
 
-    eventBus.emit('notification', {
+    showNotification({
       title: `Failed to connect to LinkedIn`,
       body: 'Try to add account manually',
     });

@@ -1,10 +1,8 @@
-import log from 'electron-log/renderer';
-import { Button, Flex, Loader, Text, LoadingOverlay } from '@mantine/core';
+import { Flex, Loader, Text, LoadingOverlay } from '@mantine/core';
 
 import { TaskDetails } from './components/task-details';
 import { ScrapeSettings } from './components/scrape-settings';
 import { ScrapeForm } from './components/scrape-form';
-import { ScrapeData } from './components/scrape-data';
 
 import { useConfig, useTask } from './hooks';
 

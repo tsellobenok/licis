@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ActionIcon,
   Combobox,
   Flex,
   InputBase,
-  Menu,
   Text,
   Tooltip,
   useCombobox,
@@ -42,20 +41,22 @@ export const AccountSwitch = ({ config, updateConfig }: Props) => {
 
     // If selected removed, make next one selected
     if (!newAccounts.find((a) => a.selected)) {
-      await updateConfig({
-        accounts: [
-          {
-            ...first,
-            selected: true,
-          },
-          ...rest,
-        ],
+      updateConfig({
+        accounts: first
+          ? [
+              {
+                ...first,
+                selected: true,
+              },
+              ...rest,
+            ]
+          : [],
       });
 
       return;
     }
 
-    await updateConfig({
+    updateConfig({
       accounts: newAccounts,
     });
   };

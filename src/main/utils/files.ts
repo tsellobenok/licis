@@ -20,13 +20,13 @@ export const getChromeExecutablePath = () => {
     case 'darwin': {
       return path.resolve(
         getAssetPath(),
-        '.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64',
+        '.cache/puppeteer/chrome/mac_arm-121.0.6167.85/chrome-mac-arm64',
       );
     }
     case 'win32': {
       return path.resolve(
         getAssetPath(),
-        '.cache/puppeteer/chrome/windows-121.0.6167.85/win-x64',
+        '.cache/puppeteer/chrome/win-121.0.6167.85/win-x64',
       );
     }
     case 'linux': {

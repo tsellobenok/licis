@@ -5,9 +5,11 @@ import { scrapeCompanyJobs } from './handlers/company-jobs';
 
 import { eventBus } from '../event-bus';
 import { getConfig } from '../utils/config';
+import { showNotification } from '../utils/notifications';
+import { syncTask } from '../utils/renderer-communication';
 import { startBrowserAndLogin } from './browser';
 
-import { ScrapeProps } from '../../types';
+import { ScrapeProps, TaskStatus } from '../../types';
 
 const SCRAPERS = {
   'company-info': scrapeCompanyInfo,
@@ -23,10 +25,18 @@ export const scrape = async (props: ScrapeProps) => {
       'Cannot start scraping. No account selected or no liAt in the account',
     );
 
-    eventBus.emit('notification', {
+    syncTask({
+      current: props.urls.length,
+      failCount: props.urls.length,
+      status: TaskStatus.Failed,
+    })
+
+    showNotification({
       body: 'Linkedin connection is required',
       title: `Failed to start scraping`,
     });
+
+    eventBus.emit('stop-browser');
 
     return;
   }
