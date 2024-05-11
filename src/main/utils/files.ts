@@ -20,19 +20,19 @@ export const getChromeExecutablePath = () => {
     case 'darwin': {
       return path.resolve(
         getAssetPath(),
-        '.cache/puppeteer/chrome/mac_arm-121.0.6167.85/chrome-mac-arm64',
+        './chrome/mac_arm-121.0.6167.85/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
       );
     }
     case 'win32': {
       return path.resolve(
         getAssetPath(),
-        '.cache/puppeteer/chrome/win-121.0.6167.85/win-x64',
+        './chrome/win-121.0.6167.85/win-x64',
       );
     }
     case 'linux': {
       return path.resolve(
         getAssetPath(),
-        '.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64/chrome',
+        './chrome/linux-121.0.6167.85/chrome-linux64/chrome',
       );
     }
     default: {

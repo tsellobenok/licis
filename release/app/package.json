@@ -8,11 +8,13 @@
   },
   "main": "./dist/main/main.js",
   "scripts": {
+    "install-chrome": "npx @puppeteer/browsers install chrome@121.0.6167.85 && mv chrome ../../assets",
     "rebuild": "node -r ts-node/register ../../.erb/scripts/electron-rebuild.js",
-    "postinstall": "npm run rebuild && npm run link-modules",
+    "postinstall": "npm run rebuild && npm run link-modules && npm run install-chrome",
     "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
   },
   "dependencies": {
+    "@puppeteer/browsers": "2.2.3",
     "puppeteer": "21.11.0",
     "puppeteer-extra": "3.3.6",
     "puppeteer-extra-plugin-stealth": "2.11.2"

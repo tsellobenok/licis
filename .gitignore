@@ -33,4 +33,4 @@ npm-debug.log.*
 *.scss.d.ts
 
 # Puppeteer cache
-assets/.cache
+assets/chrome
